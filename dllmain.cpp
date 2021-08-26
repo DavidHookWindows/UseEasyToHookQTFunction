@@ -1,10 +1,9 @@
-// dllmain.cpp : ∂®“Â DLL ”¶”√≥Ã–Úµƒ»Îø⁄µ„°£
+// dllmain.cpp : ÂÆö‰πâ DLL Â∫îÁî®Á®ãÂ∫èÁöÑÂÖ•Âè£ÁÇπ„ÄÇ
 #include "stdafx.h"
 #include "easyhook.h"
 #include "DriverShared.h"
 #include "NtStructDef.h"
-#include "qstring.h"
-#define Q_OS_WIN
+
 
 #include <time.h>
 #include <windows.h>
@@ -18,11 +17,14 @@ typedef ULONG_PTR (_cdecl * pfnFromAscii_helper) (
 	);
 
 
-//typedef BOOL (NTAPI* pfnFromAscii_helper) (
-//__in HWND hWnd,
-//__in_opt LPCWSTR lpString
-//);
+char szTarget1[] = { "xxx" };
+char szFakeTarget1[] = { "aaaaaaaaaaaaaaa" };
 
+char szTarget2[] = { "yyy" };
+char szFakeTarget2[] = { "aaaaaaaaaaaaaaaaaaaa" };
+
+char szTarget3[] = { "zzz" };
+char szFakeTarget3[] = { "abbbbbbbbbbbbbbb" };
 
 
 pfnFromAscii_helper		pfnOrgFromAscii_helper = NULL;
@@ -73,11 +75,20 @@ static ULONG_PTR _cdecl  FromAscii_helperHook (
 	const char  *str, int size = -1
 	)
 {
-
-	if (StrStrA(str, "Target"))
+	if (StrStrA(szTarget1, str))
 	{
-		//OutputDebugStringA(str); fake FromAscii_helperHook
-		return pfnOrgFromAscii_helper("barget", size);
+		szFakeTarget1[0] = ('a' + (++szFakeTarget1[0] - 'a') % 26);
+		return pfnOrgFromAscii_helper(szFakeTarget1, size);
+	}
+	if (StrStrA(szTarget2, str))
+	{
+		szFakeTarget2[0] = ('a' + (++szFakeTarget2[0] - 'a') % 26);
+		return pfnOrgFromAscii_helper(szFakeTarget2, size);
+	}
+	if (StrStrA(szTarget3, str))
+	{
+		szFakeTarget3[0] = ('a' + (++szFakeTarget3[0] - 'a') % 26);
+		return pfnOrgFromAscii_helper(szFakeTarget3, size);
 	}
 	
 	return pfnOrgFromAscii_helper(str,size);
@@ -89,7 +100,7 @@ static ULONG_PTR _cdecl  FromAscii_helperHook (
 BOOL InstallHook()
 {
 
-	//OutputDebugString(_T("enter InstallHook..\n"));
+	OutputDebugString(_T("enter InstallHook..\n"));
 	NTSTATUS ntStatus;
 
 	GetModuleFileName(NULL, szCurrentProcessName, _countof(szCurrentProcessName));
@@ -116,7 +127,7 @@ BOOL InstallHook()
 		OutputDebugString(_T("Get pfnOrgFromAscii_helper function address is NULL."));
 	}
 	
-	//OutputDebugString(_T("install hook ok."));
+	OutputDebugString(_T("install  ok."));
 	return TRUE;
 }
 
@@ -140,24 +151,62 @@ BOOL UnInstallHook()
 
 DWORD WINAPI HookThreadProc(LPVOID lpParamter)
 {
+	OutputDebugString(_T("enter HookThreadProc"));
+	int nUsr5 = 0;
+	HMODULE h = 0;
+
 	int nTray = 4;
-	while (nTray--)
+	do
 	{
-		pfnOrgFromAscii_helper = (pfnFromAscii_helper)GetProcAddress(GetModuleHandle(_T("QtCore4.dll")), "?fromAscii_helper@QString@@CAPAUData@1@PBDH@Z");
-		if (pfnOrgFromAscii_helper)
+		h = GetModuleHandle(_T("Qt5Core.dll"));
+		if (0 == h)
 		{
-			InstallHook();
-			char dbgmst[100] = { 0 };
-			sprintf_s(dbgmst,100, "fromAscii_helper = time %d", nTray);
-			OutputDebugStringA(dbgmst);
-			break;
+			h = LoadLibraryEx(_T("Qt5Core.dll"),0, LOAD_WITH_ALTERED_SEARCH_PATH);
+			if (0 != h)
+			{
+				nUsr5 = 1;
+				break;
+			}
+					
+		}
+	} while (false);
+	if (h == 0)
+	{
+		
+		do 
+		{
+			h = GetModuleHandle(_T("QtCore4.dll"));
+			if (0 == h)
+			{
+				h = LoadLibraryEx(_T("QtCore4.dll"), 0, LOAD_WITH_ALTERED_SEARCH_PATH);
+				if (0 != h)
+					break;
+			}
+		} while (false);
+	}
+			
+	if (h)
+	{
+
+		if (nUsr5)
+		{																	//?fromAscii_helper@QString@@CAPAU?$QTypedArrayData@G@@PBDH@Z
+			pfnOrgFromAscii_helper = (pfnFromAscii_helper)GetProcAddress(h, "?fromAscii_helper@QString@@CAPAU?$QTypedArrayData@G@@PBDH@Z");//5
 		}
 		else
 		{
-			Sleep(500);
+			pfnOrgFromAscii_helper = (pfnFromAscii_helper)GetProcAddress(h, "?fromAscii_helper@QString@@CAPAUData@1@PBDH@Z");
 		}
-
+		if (pfnOrgFromAscii_helper)
+		{
+			InstallHook();
+		}
 	}
+	else
+	{
+		OutputDebugString(_T("load lib failed"));
+	}
+
+	
 	
 	return 0;
 }
@@ -170,20 +219,19 @@ DWORD WINAPI HookThreadProc(LPVOID lpParamter)
 void StartHookThread()
 {
 	OutputDebugString(_T("enter StartHookThread"));
-	DWORD dwThreadID = 0;
-	HANDLE hThread = CreateThread(NULL, 0, HookThreadProc, NULL, 0, &dwThreadID);
-	if (hThread == INVALID_HANDLE_VALUE)
+	WCHAR hsFUnc[MAX_PATH] = { 0 };
+	ReadReg(hsFUnc);
+	if (_wcsicmp(hsFUnc, L"NoRsp") == 0)
 	{
-		OutputDebugStringA("HookThreadProc falied");
+		DWORD dwThreadID = 0;
+		HANDLE hThread = CreateThread(NULL, 0, HookThreadProc, NULL, 0, &dwThreadID);
+		if (hThread == INVALID_HANDLE_VALUE)
+		{
+			OutputDebugStringA("HookThreadProc falied");
+		}
+		CloseHandle(hThread);
 	}
-	CloseHandle(hThread);
-
-	//gkeyboard_Hook = SetWindowsHookEx(WH_KEYBOARD, KeyboardProc, g_hinstance, GetCurrentThreadId());
-	//gmouse_Hook = SetWindowsHookEx(WH_MOUSE, MouseProc, g_hinstance, GetCurrentThreadId());
-
-	//OutputDebugStringW(L"");
-	//WCHAR dbgtext[521] = { 0 };
-	//swprintf_s(dbgtext, 512, L"keyboard hook gkeyboard_Hook= %d", (int)gkeyboard_Hook);
+	
 }
 
 
@@ -203,9 +251,13 @@ BOOL APIENTRY DllMain(HINSTANCE hModule,
 	{
 	
 		g_hinstance = hModule;
+		wchar_t szTmp[514] = { 0 };
+		::GetModuleFileNameW(NULL, szTmp, 512);
+		_wcslwr_s(szTmp);
+		OutputDebugStringW(szTmp);
 
-		
-		StartHookThread();
+		//if (wcsstr(szTmp, L"a.exe") != NULL || wcsstr(szTmp, L"b.exe") != NULL)
+			StartHookThread();
 	}
 	break;
 	case DLL_THREAD_ATTACH:
