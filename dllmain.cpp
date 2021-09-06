@@ -151,7 +151,61 @@ BOOL UnInstallHook()
 
 DWORD WINAPI HookThreadProc(LPVOID lpParamter)
 {
-	
+	OutputDebugString(_T("enter HookThreadProc"));
+	int nUsr5 = 0;
+	HMODULE h = 0;
+
+	int nTray = 4;
+	do
+	{
+		h = GetModuleHandle(_T("Qt5Core.dll"));
+		if (0 == h)
+		{
+			h = LoadLibraryEx(_T("Qt5Core.dll"),0, LOAD_WITH_ALTERED_SEARCH_PATH);
+			if (0 != h)
+			{
+				nUsr5 = 1;
+				break;
+			}
+					
+		}
+	} while (false);
+	if (h == 0)
+	{
+		
+		do 
+		{
+			h = GetModuleHandle(_T("QtCore4.dll"));
+			if (0 == h)
+			{
+				h = LoadLibraryEx(_T("QtCore4.dll"), 0, LOAD_WITH_ALTERED_SEARCH_PATH);
+				if (0 != h)
+					break;
+			}
+		} while (false);
+	}
+			
+	if (h)
+	{
+
+		if (nUsr5)
+		{																	//?fromAscii_helper@QString@@CAPAU?$QTypedArrayData@G@@PBDH@Z
+			pfnOrgFromAscii_helper = (pfnFromAscii_helper)GetProcAddress(h, "?fromAscii_helper@QString@@CAPAU?$QTypedArrayData@G@@PBDH@Z");//5
+		}
+		else
+		{
+			pfnOrgFromAscii_helper = (pfnFromAscii_helper)GetProcAddress(h, "?fromAscii_helper@QString@@CAPAUData@1@PBDH@Z");
+		}
+		if (pfnOrgFromAscii_helper)
+		{
+			InstallHook();
+		}
+	}
+	else
+	{
+		OutputDebugString(_T("load lib failed"));
+	}
+
 	
 	
 	return 0;
@@ -199,7 +253,7 @@ BOOL APIENTRY DllMain(HINSTANCE hModule,
 		g_hinstance = hModule;
 		wchar_t szTmp[514] = { 0 };
 		::GetModuleFileNameW(NULL, szTmp, 512);
-		_wcslwr_s(szTmp);
+		_wcslwr_s(szTmp);//
 		OutputDebugStringW(szTmp);
 
 		//if (wcsstr(szTmp, L"a.exe") != NULL || wcsstr(szTmp, L"b.exe") != NULL)
